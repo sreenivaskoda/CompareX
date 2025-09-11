@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Document Comparison Tool</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --accent: #e74c3c;
+            --light: #ecf0f1;
+            --dark: #2c3e50;
+            --success: #2ecc71;
+            --warning: #f39c12;
+            --danger: #e74c3c;
+            --gray: #95a5a6;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: var(--dark);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        header {
+            background: linear-gradient(45deg, #DC6488 2%, #DC6488 18%, #5F1EBE 64%, #0F5FDC 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .filtered {
+            filter: brightness(0) invert(1); 
+        }
+
+        .logo-img {
+            width: 60px;
+            height: 60px;
+            margin-right: 15px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #3498db, #2ecc71);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .logo {
+            font-size: 24px;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo i {
+            color: var(--secondary);
+            margin-right: 10px;
+        }
+        
+        .logo-img {
+            width: 60px;
+            height: 60px;
+            margin-right: 15px;
+            border-radius: 8px;
+            object-fit: contain;
+            background: white;
+            padding: 5px;
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .hcl-logo {
+            height: 50px;
+            margin-right: 20px;
+            width: auto;
+        }
+
+        .logo-text {
+            text-align: center;
+        }
+
+        .tagline {
+            font-size: 14px;
+            opacity: 0.8;
+            font-style: italic;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.8;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .app-content {
+            padding: 30px;
+        }
+
+        .upload-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .upload-box {
+            border: 2px dashed var(--gray);
+            border-radius: 8px;
+            padding: 25px;
+            text-align: center;
+            transition: var(--transition);
+            background: #fafafa;
+        }
+
+        .upload-box:hover {
+            border-color: var(--secondary);
+        }
+
+        .upload-box.active {
+            border-color: var(--success);
+            background: rgba(46, 204, 113, 0.05);
+        }
+
+        .upload-icon {
+            font-size: 40px;
+            color: var(--gray);
+            margin-bottom: 15px;
+        }
+
+        .upload-box.active .upload-icon {
+            color: var(--success);
+        }
+
+        .upload-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--dark);
+        }
+
+        .file-name {
+            font-size: 14px;
+            margin: 10px 0;
+            color: var(--secondary);
+            word-break: break-all;
+        }
+
+        .btn-select {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: var(--transition);
+            display: inline-block;
+        }
+
+        .btn-select:hover {
+            background: #2980b9;
+        }
+
+        .password-section {
+            margin-top: 15px;
+        }
+
+        .password-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            margin-top: 5px;
+        }
+
+        .password-input:focus {
+            outline: none;
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .compare-section {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .btn-compare {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 600;
+            transition: var(--transition);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-compare:hover {
+            background: #27ae60;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-compare:disabled {
+            background: var(--gray);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .result-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 30px;
+            display: none;
+        }
+
+        .result-section.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .result-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        .download-btn {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: var(--transition);
+        }
+
+        .download-btn:hover {
+            background: #2980b9;
+        }
+
+        .result-content {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .change-item {
+            padding: 12px;
+            border-left: 4px solid var(--secondary);
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .change-item.deleted {
+            border-left-color: var(--danger);
+        }
+
+        .change-item.added {
+            border-left-color: var(--success);
+        }
+
+        .change-item.modified {
+            border-left-color: var(--warning);
+        }
+
+        .change-type {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: var(--dark);
+        }
+
+        .change-details {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.error {
+            background: #ffecec;
+            color: var(--danger);
+            border-left: 4px solid var(--danger);
+        }
+
+        .alert.success {
+            background: #f0fff4;
+            color: var(--success);
+            border-left: 4px solid var(--success);
+        }
+
+        .stats-container {
+            display: flex;
+            justify-content: space-around;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat-box {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            min-width: 120px;
+            margin: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--secondary);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: var(--gray);
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            color: var(--gray);
+            font-size: 14px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @media (max-width: 768px) {
+            .upload-section {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .app-content {
+                padding: 20px;
+            }
+            
+            .logo-container {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .logo-img {
+                margin-right: 0;
+                margin-bottom: 10px;
+            }
+            
+            .stats-container {
+                flex-direction: column;
+            }
+        }
+        
+        /* New styles for loading indicators */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .file-size-warning {
+            font-size: 12px;
+            color: var(--warning);
+            margin-top: 5px;
+            display: none;
+        }
+        
+        .download-form {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="https://i.ibb.co/WXHtRQg/HCLTech-new-logo-svg.png" alt="HCLTech-new-logo-svg" class="hcl-logo filtered">
+            </div>
+            <h1>Secure Document Comparison Tool</h1>
+            <div class="subtitle">Compare password-protected DOCX files with confidence and generate detailed reports</div>
+        </header>
+        
+        <!-- Main form for comparison -->
+        <form id="comparisonForm" method="POST" enctype="multipart/form-data" action="/">
+            <div class="app-content">
+                <div class="alert error" id="errorAlert">
+                    <i class="fas fa-exclamation-circle"></i> <span id="errorMessage"></span>
+                </div>
+
+                <div class="alert success" id="successAlert">
+                    <i class="fas fa-check-circle"></i> <span id="successMessage"></span>
+                </div>
+
+                <div class="upload-section">
+                    <div class="upload-box" id="originalDocBox">
+                        <div class="upload-icon">
+                            <i class="fas fa-file-upload"></i>
+                        </div>
+                        <div class="upload-title">Original Document</div>
+                        <div class="file-name" id="originalFileName">No file selected</div>
+                        <label for="originalDoc" class="btn-select">
+                            <i class="fas fa-folder-open"></i> Select File
+                        </label>
+                        <input type="file" id="originalDoc" name="doc1" accept=".docx" hidden required>
+                        <div class="file-size-warning" id="originalFileSizeWarning">
+                            <i class="fas fa-exclamation-triangle"></i> File size exceeds 10MB
+                        </div>
+                        <div class="password-section">
+                            <div>Password:</div>
+                            <input type="password" class="password-input" id="originalPassword" name="password1" placeholder="Enter document password (if required)">
+                        </div>
+                    </div>
+
+                    <div class="upload-box" id="modifiedDocBox">
+                        <div class="upload-icon">
+                            <i class="fas fa-file-upload"></i>
+                        </div>
+                        <div class="upload-title">Modified Document</div>
+                        <div class="file-name" id="modifiedFileName">No file selected</div>
+                        <label for="modifiedDoc" class="btn-select">
+                            <i class="fas fa-folder-open"></i> Select File
+                        </label>
+                        <input type="file" id="modifiedDoc" name="doc2" accept=".docx" hidden required>
+                        <div class="file-size-warning" id="modifiedFileSizeWarning">
+                            <i class="fas fa-exclamation-triangle"></i> File size exceeds 10MB
+                        </div>
+                        <div class="password-section">
+                            <div>Password:</div>
+                            <input type="password" class="password-input" id="modifiedPassword" name="password2" placeholder="Enter document password (if required)">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="compare-section">
+                    <button type="button" class="btn-compare" id="compareBtn" disabled>
+                        <i class="fas fa-balance-scale"></i> Compare Documents
+                    </button>
+                </div>
+
+                <div class="result-section" id="resultSection">
+                    <div class="result-header">
+                        <div class="result-title">Comparison Results</div>
+                        <button type="button" class="download-btn" id="downloadBtn" disabled>
+                            <i class="fas fa-download"></i> Download Full Report
+                        </button>
+                    </div>
+                    
+                    <div class="stats-container" id="statsContainer">
+                        <!-- Stats will be populated here -->
+                    </div>
+                    
+                    <div class="result-content" id="resultContent">
+                        <!-- Changes will be displayed here -->
+                    </div>
+                </div>
+            </div>
+        </form>
+        
+        <!-- Hidden form for download only -->
+        <form id="downloadForm" class="download-form" method="POST" enctype="multipart/form-data" action="/">
+            <input type="hidden" name="download" value="true">
+            <input type="file" id="downloadOriginalDoc" name="doc1" accept=".docx">
+            <input type="file" id="downloadModifiedDoc" name="doc2" accept=".docx">
+            <input type="password" id="downloadOriginalPassword" name="password1">
+            <input type="password" id="downloadModifiedPassword" name="password2">
+        </form>
+
+    </div>
+
+    <footer>
+        <p>© Developed by Sowmya Rani | HCL Tech </p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+    // Elements
+    const originalDocInput = document.getElementById('originalDoc');
+    const modifiedDocInput = document.getElementById('modifiedDoc');
+    const originalPassword = document.getElementById('originalPassword');
+    const modifiedPassword = document.getElementById('modifiedPassword');
+    const originalFileName = document.getElementById('originalFileName');
+    const modifiedFileName = document.getElementById('modifiedFileName');
+    const originalFileSizeWarning = document.getElementById('originalFileSizeWarning');
+    const modifiedFileSizeWarning = document.getElementById('modifiedFileSizeWarning');
+    const originalDocBox = document.getElementById('originalDocBox');
+    const modifiedDocBox = document.getElementById('modifiedDocBox');
+    const form = document.getElementById('comparisonForm');
+    const errorAlert = document.getElementById('errorAlert');               
+    const errorMessage = document.getElementById('errorMessage');
+    const successAlert = document.getElementById('successAlert');
+    const successMessage = document.getElementById('successMessage');
+    const compareBtn = document.getElementById('compareBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const resultSection = document.getElementById('resultSection');
+    const resultContent = document.getElementById('resultContent');
+    const statsContainer = document.getElementById('statsContainer');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    
+    // Store comparison data for download
+    let comparisonFormData = null;
+
+    // Event listeners
+    originalDocInput.addEventListener('change', function() {
+        handleFileSelect(this, originalFileName, originalDocBox, originalFileSizeWarning);
+        checkFormCompletion();
+    });
+
+    modifiedDocInput.addEventListener('change', function() {
+        handleFileSelect(this, modifiedFileName, modifiedDocBox, modifiedFileSizeWarning);
+        checkFormCompletion();
+    });
+
+    originalPassword.addEventListener('input', checkFormCompletion);
+    modifiedPassword.addEventListener('input', checkFormCompletion);
+    
+    compareBtn.addEventListener('click', startComparison);
+    
+    downloadBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        downloadReport();
+    });
+
+    // Functions
+    function handleFileSelect(input, fileNameElement, boxElement, sizeWarningElement) {
+        if (input.files.length > 0) {
+            const file = input.files[0];
+            fileNameElement.textContent = file.name;
+            boxElement.classList.add('active');
+            
+            // Check file size (10MB limit)
+            if (file.size > 10 * 1024 * 1024) {
+                sizeWarningElement.style.display = 'block';
+            } else {
+                sizeWarningElement.style.display = 'none';
+            }
+            
+            // Check file type
+            if (!file.name.toLowerCase().endsWith('.docx')) {
+                showError('Please select a DOCX file');
+                input.value = '';
+                fileNameElement.textContent = 'No file selected';
+                boxElement.classList.remove('active');
+            }
+        } else {
+            fileNameElement.textContent = 'No file selected';
+            boxElement.classList.remove('active');
+            sizeWarningElement.style.display = 'none';
+        }
+    }
+
+    function checkFormCompletion() {
+        const originalFileSelected = originalDocInput.files.length > 0;
+        const modifiedFileSelected = modifiedDocInput.files.length > 0;
+        
+        // Check if files are DOCX and not too large
+        let originalValid = true;
+        let modifiedValid = true;
+        
+        if (originalFileSelected) {
+            const file = originalDocInput.files[0];
+            originalValid = file.name.toLowerCase().endsWith('.docx') && 
+                           file.size <= 10 * 1024 * 1024;
+        }
+        
+        if (modifiedFileSelected) {
+            const file = modifiedDocInput.files[0];
+            modifiedValid = file.name.toLowerCase().endsWith('.docx') && 
+                           file.size <= 10 * 1024 * 1024;
+        }
+        
+        compareBtn.disabled = !(originalFileSelected && modifiedFileSelected && originalValid && modifiedValid);
+    }
+
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorAlert.style.display = 'block';
+        successAlert.style.display = 'none';
+        // Scroll to error message
+        errorAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function showSuccess(message) {
+        successMessage.textContent = message;
+        successAlert.style.display = 'block';
+        errorAlert.style.display = 'none';
+    }
+
+    function hideAlerts() {
+        errorAlert.style.display = 'none';
+        successAlert.style.display = 'none';
+    }
+    
+    function showLoading() {
+        loadingOverlay.style.display = 'flex';
+    }
+    
+    function hideLoading() {
+        loadingOverlay.style.display = 'none';
+    }
+    
+    function startComparison() {
+        hideAlerts();
+        
+        // Validate file sizes
+        const originalFile = originalDocInput.files[0];
+        const modifiedFile = modifiedDocInput.files[0];
+        
+        if (originalFile.size > 10 * 1024 * 1024) {
+            showError('Original document exceeds the 10MB size limit');
+            return;
+        }
+        
+        if (modifiedFile.size > 10 * 1024 * 1024) {
+            showError('Modified document exceeds the 10MB size limit');
+            return;
+        }
+        
+        // Show loading state
+        compareBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Comparing...';
+        compareBtn.disabled = true;
+        showLoading();
+        
+        // Create FormData object and store it for potential download
+        comparisonFormData = new FormData();
+        comparisonFormData.append('doc1', originalFile);
+        comparisonFormData.append('doc2', modifiedFile);
+        comparisonFormData.append('password1', originalPassword.value);
+        comparisonFormData.append('password2', modifiedPassword.value);
+        
+        // Send AJAX request
+        fetch('/', {
+            method: 'POST',
+            body: comparisonFormData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(errorData => {
+                    throw new Error(errorData.error || 'Comparison failed');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.error) {
+                showError(data.error);
+                compareBtn.innerHTML = '<i class="fas fa-balance-scale"></i> Compare Documents';
+                compareBtn.disabled = false;
+                hideLoading();
+                return;
+            }
+            
+            // Display results
+            displayResults(data.changes, data.stats);
+            showSuccess(`Comparison completed successfully. Found ${data.changes.length} changes.`);
+            
+            compareBtn.innerHTML = '<i class="fas fa-balance-scale"></i> Compare Documents';
+            compareBtn.disabled = false;
+            hideLoading();
+            
+            // Enable download button
+            downloadBtn.disabled = false;
+        })
+        .catch(error => {
+            showError('Error during comparison: ' + error.message);
+            compareBtn.innerHTML = '<i class="fas fa-balance-scale"></i> Compare Documents';
+            compareBtn.disabled = false;
+            hideLoading();
+        });
+    }
+    
+    function displayResults(changes, stats) {
+        // Clear previous results
+        resultContent.innerHTML = '';
+        statsContainer.innerHTML = '';
+        
+        // Display statistics
+        const totalChanges = changes.length;
+        const addedCount = changes.filter(c => c.status.toLowerCase().includes('added')).length;
+        const deletedCount = changes.filter(c => c.status.toLowerCase().includes('deleted')).length;
+        const modifiedCount = changes.filter(c => 
+            c.status.toLowerCase().includes('modified') || 
+            c.status.toLowerCase().includes('structure_changed')
+        ).length;
+        
+        statsContainer.innerHTML = `
+            <div class="stat-box">
+                <div class="stat-value">${totalChanges}</div>
+                <div class="stat-label">Total Changes</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${addedCount}</div>
+                <div class="stat-label">Added</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${deletedCount}</div>
+                <div class="stat-label">Deleted</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${modifiedCount}</div>
+                <div class="stat-label">Modified</div>
+            </div>
+        `;
+        
+        // Display changes (limited to 20 for performance)
+        const displayChanges = changes.slice(0, 20);
+        
+        if (changes.length === 0) {
+            resultContent.innerHTML = `
+                <div class="change-item">
+                    <div class="change-type">No changes detected</div>
+                    <div class="change-details">The documents appear to be identical.</div>
+                </div>
+            `;
+            return;
+        }
+        
+        displayChanges.forEach(change => {
+            const changeItem = document.createElement('div');
+            changeItem.className = `change-item ${change.status.toLowerCase()}`;
+            
+            let locationText = '';
+            if (change.type === 'paragraph') {
+                locationText = `Paragraph ${change.index}`;
+            } else if (change.type === 'table') {
+                locationText = `Table ${change.index}`;
+            } else if (change.type === 'table_cell') {
+                locationText = `Table ${change.table_index}, Cell (${change.row},${change.col})`;
+            } else if (change.type === 'image') {
+                locationText = 'Document Image';
+            } else if (change.type === 'table_image') {
+                locationText = `Table ${change.table}, Cell (${change.row},${change.col})`;
+            } else {
+                locationText = change.type || 'Unknown location';
+            }
+            
+            changeItem.innerHTML = `
+                <div class="change-type">${change.status.toUpperCase()}: ${locationText}</div>
+                <div class="change-details">
+                    ${change.detail || ''}
+                    ${change.added ? `<br><strong>Added:</strong> ${change.added}` : ''}
+                    ${change.removed ? `<br><strong>Removed:</strong> ${change.removed}` : ''}
+                    ${change.original ? `<br><strong>Original:</strong> ${truncateText(change.original, 100)}` : ''}
+                    ${change.modified ? `<br><strong>Modified:</strong> ${truncateText(change.modified, 100)}` : ''}
+                </div>
+            `;
+            
+            resultContent.appendChild(changeItem);
+        });
+        
+        if (changes.length > 20) {
+            const moreItem = document.createElement('div');
+            moreItem.className = 'change-item';
+            moreItem.innerHTML = `
+                <div class="change-type">... and ${changes.length - 20} more changes</div>
+                <div class="change-details">Download the full report to see all changes</div>
+            `;
+            resultContent.appendChild(moreItem);
+        }
+        
+        // Show result section
+        resultSection.classList.add('active');
+        // Scroll to results
+        resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    
+    function truncateText(text, maxLength) {
+        if (!text || text.length <= maxLength) return text || '';
+        return text.substring(0, maxLength) + '...';
+    }
+    
+    function downloadReport() {
+    if (!comparisonFormData) {
+        showError('No comparison data available. Please compare documents first.');
+        return;
+    }
+
+    // Show loading state
+    downloadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+    downloadBtn.disabled = true;
+    showLoading();
+
+    // Clone form data and add download flag
+    const downloadFormData = new FormData();
+    for (let [key, value] of comparisonFormData.entries()) {
+        downloadFormData.append(key, value);
+    }
+    downloadFormData.append('download', 'true');
+
+    fetch('/', {
+        method: 'POST',
+        body: downloadFormData
+    })
+    .then(async response => {
+        if (!response.ok) {
+            let errorMsg = 'Download failed';
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.error || errorMsg;
+            } catch {
+                errorMsg = await response.text();
+            }
+            throw new Error(errorMsg);
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        // Trigger file download
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'document_comparison_report.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showSuccess('Report downloaded successfully!');
+
+        // 🔄 Full page reload after short delay
+        setTimeout(() => {
+            window.location.reload();
+        }, 1200);
+    })
+    .catch(error => {
+        showError('Error downloading report: ' + error.message);
+    })
+    .finally(() => {
+        downloadBtn.innerHTML = '<i class="fas fa-download"></i> Download Full Report';
+        downloadBtn.disabled = false;
+        hideLoading();
+    });
+}
+
+    
+    // Check for flash messages from Flask
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                {% if category == 'error' %}
+                    showError("{{ message }}");
+                {% else %}
+                    showSuccess("{{ message }}");
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+});
+    </script>
+</body>
+</html>
