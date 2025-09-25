@@ -30,6 +30,7 @@ from typing import List, Dict, Any, Tuple, Optional, Set
 from datetime import datetime
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import tempfile
 
 # Third-party imports
 from docx.shared import RGBColor
@@ -65,6 +66,9 @@ UPLOAD_FOLDER = "uploads"
 COMPARISON_CACHE = "cache"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(COMPARISON_CACHE, exist_ok=True)
+temp_dir = tempfile.gettempdir()
+if not os.path.exists(temp_dir):
+    os.makedirs(temp_dir, exist_ok=True)
 
 # Global variables for progress tracking
 progress_data = {}
@@ -594,67 +598,157 @@ def get_table_images(doc: docx.Document) -> List[Dict[str, Any]]:
     return table_images
 
 def insert_image_into_excel(ws, img_bytes: bytes, cell_address: str, 
-                           max_width: int = 120, max_height: int = 120) -> bool:
+                           max_width: int = 600, max_height: int = 600) -> bool:
     """
-    Insert an image into Excel worksheet with size adjustment.
+    Insert an image into Excel worksheet with proper size adjustment to fit cell content.
     """
-    if not img_bytes:
+    if not img_bytes or len(img_bytes) < 100:  # Basic validation
         return False
         
     try:
-        # Create temporary file for the image
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-            # Open and process the image
-            pil_img = PILImage.open(io.BytesIO(img_bytes))
-            
-            # Convert to RGB if necessary
-            if pil_img.mode in ('RGBA', 'LA', 'P'):
-                background = PILImage.new('RGB', pil_img.size, (255, 255, 255))
-                if pil_img.mode == 'P':
-                    pil_img = pil_img.convert('RGBA')
-                background.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode == 'RGBA' else None)
-                pil_img = background
-            
-            # Resize image if too large
-            original_width, original_height = pil_img.size
+        # Use in-memory processing instead of temporary files
+        pil_img = PILImage.open(io.BytesIO(img_bytes))
+        
+        # Convert to RGB if necessary
+        if pil_img.mode in ('RGBA', 'LA', 'P'):
+            background = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+            if pil_img.mode == 'P':
+                pil_img = pil_img.convert('RGBA')
+            background.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode == 'RGBA' else None)
+            pil_img = background
+        elif pil_img.mode != 'RGB':
+            pil_img = pil_img.convert('RGB')
+        
+        # Resize image to fit within 200x200 while maintaining aspect ratio
+        original_width, original_height = pil_img.size
+        
+        # Calculate new dimensions maintaining aspect ratio
+        if original_width > max_width or original_height > max_height:
             width_ratio = max_width / original_width
             height_ratio = max_height / original_height
-            ratio = min(width_ratio, height_ratio, 1.0)  # Don't enlarge small images
+            ratio = min(width_ratio, height_ratio)
             
-            if ratio < 1.0:
-                new_width = int(original_width * ratio)
-                new_height = int(original_height * ratio)
+            new_width = int(original_width * ratio)
+            new_height = int(original_height * ratio)
+            pil_img = pil_img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+        else:
+            # If image is smaller than 200x200, scale it up to at least 150px on the smaller dimension
+            min_dimension = 150
+            if original_width < min_dimension or original_height < min_dimension:
+                width_ratio = min_dimension / original_width
+                height_ratio = min_dimension / original_height
+                ratio = max(width_ratio, height_ratio)
+                
+                # Don't scale up too much - cap at 200px
+                new_width = min(200, int(original_width * ratio))
+                new_height = min(200, int(original_height * ratio))
                 pil_img = pil_img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
-            
-            # Save as PNG for better compatibility
-            pil_img.save(tmp_file.name, format="PNG", optimize=True)
-            
-            # Create OpenPyXL image and add to worksheet
-            img = XLImage(tmp_file.name)
-            img.anchor = cell_address
-            
-            # Adjust cell size to fit image
-            col_letter = cell_address[0]  # Get column letter
-            row_num = int(cell_address[1:])  # Get row number
-            
-            # Set column width based on image width
-            col_width = max(8.43, min(50, img.width * 0.14))
-            ws.column_dimensions[col_letter].width = col_width
-            
-            # Set row height based on image height
-            row_height = max(15, min(400, img.height * 0.75))
-            ws.row_dimensions[row_num].height = row_height
-            
-            ws.add_image(img)
-            
-            # Clean up temporary file
-            os.unlink(tmp_file.name)
-            return True
+        
+        # Save to in-memory buffer
+        img_buffer = io.BytesIO()
+        pil_img.save(img_buffer, format="PNG")
+        img_buffer.seek(0)
+        
+        # Create OpenPyXL image from buffer
+        img = XLImage(img_buffer)
+        img.anchor = cell_address
+        
+        # Adjust cell size to fit the 200x200 image properly
+        col_letter = cell_address[0]
+        row_num = int(cell_address[1:])
+        
+        # Convert pixels to Excel column width (approximate: 1 pixel ≈ 0.14 units)
+        col_width = max(8.43, min(500, pil_img.width * 0.14))
+        ws.column_dimensions[col_letter].width = col_width
+        
+        # Convert pixels to Excel row height (approximate: 1 pixel ≈ 0.75 points)
+        row_height = max(15, min(400, pil_img.height * 0.75))
+        ws.row_dimensions[row_num].height = row_height
+        
+        ws.add_image(img)
+        return True
             
     except Exception as e:
         print(f"Error inserting image into Excel: {e}")
-        if 'tmp_file' in locals() and os.path.exists(tmp_file.name):
-            os.unlink(tmp_file.name)
+        return False
+    
+def insert_image_into_excel_enhanced(ws, img_bytes: bytes, cell_address: str, 
+                                   max_width: int = 600, max_height: int = 600) -> bool:
+    """
+    Enhanced image insertion with smart sizing and cell adjustment.
+    """
+    if not img_bytes or len(img_bytes) < 100:
+        return False
+        
+    try:
+        # Open and process image
+        pil_img = PILImage.open(io.BytesIO(img_bytes))
+        
+        # Convert to RGB
+        if pil_img.mode != 'RGB':
+            pil_img = pil_img.convert('RGB')
+        
+        original_width, original_height = pil_img.size
+        
+        # Extract cell coordinates
+        col_letter = ''.join(filter(str.isalpha, cell_address))
+        row_num = int(''.join(filter(str.isdigit, cell_address)))
+        
+        # Smart sizing algorithm
+        def calculate_optimal_size(img_width, img_height, max_w, max_h):
+            # Calculate ratios
+            width_ratio = max_w / img_width
+            height_ratio = max_h / img_height
+            
+            # Use the smaller ratio to maintain aspect ratio
+            ratio = min(width_ratio, height_ratio)
+            
+            new_width = int(img_width * ratio)
+            new_height = int(img_height * ratio)
+            
+            # Ensure minimum visibility size
+            if new_width < 40:
+                ratio = 40 / img_width
+                new_width = 40
+                new_height = int(img_height * ratio)
+            
+            if new_height < 30:
+                ratio = 30 / img_height
+                new_height = 30
+                new_width = int(img_width * ratio)
+            
+            return new_width, new_height
+        
+        # Calculate optimal size
+        new_width, new_height = calculate_optimal_size(
+            original_width, original_height, max_width, max_height
+        )
+        
+        # Resize image
+        pil_img = pil_img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+        
+        # Adjust cell dimensions to fit image
+        # Excel: 1 character width ≈ 7 pixels, 1 point height ≈ 1.33 pixels
+        required_col_width = max(8.43, min(500, new_width / 8.43))
+        required_row_height = max(15, min(400, new_height / 15))
+        
+        # Apply cell sizing
+        ws.column_dimensions[col_letter].width = required_col_width
+        ws.row_dimensions[row_num].height = required_row_height
+        
+        # Save to buffer and insert
+        img_buffer = io.BytesIO()
+        pil_img.save(img_buffer, 'PNG')
+        img_buffer.seek(0)
+        
+        img = XLImage(img_buffer)
+        img.anchor = cell_address
+        ws.add_image(img)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Enhanced image insertion error: {e}")
         return False
 
 # ================================
@@ -1562,30 +1656,9 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
         dashboard_ws[f'B{i}'] = value
         dashboard_ws[f'A{i}'].font = Font(bold=True)
     
-    # Change distribution chart data
-    dashboard_ws['A10'] = "Change Distribution by Type"
-    type_data = []
-    for change_type, count in stats["changes"]["by_type"].items():
-        type_data.append((change_type.replace('_', ' ').title(), count))
-    
-    for i, (change_type, count) in enumerate(type_data, start=11):
-        if i <= 20:  # Limit to 10 types for readability
-            dashboard_ws[f'A{i}'] = change_type
-            dashboard_ws[f'B{i}'] = count
-    
-    # Severity distribution
-    dashboard_ws['D10'] = "Change Severity Distribution"
-    severity_labels = {0: 'Info', 1: 'Minor', 2: 'Major', 3: 'Critical'}
-    for i, (severity, count) in enumerate(stats["changes"]["by_severity"].items(), start=11):
-        if i <= 15:  # Limit to 5 severity levels
-            dashboard_ws[f'D{i}'] = severity_labels.get(severity, f"Level {severity}")
-            dashboard_ws[f'E{i}'] = count
-    
     # Set column widths
     dashboard_ws.column_dimensions['A'].width = 25
     dashboard_ws.column_dimensions['B'].width = 15
-    dashboard_ws.column_dimensions['D'].width = 25
-    dashboard_ws.column_dimensions['E'].width = 15
         
     # Create Summary sheet
     summary_ws = wb.create_sheet("Summary")
@@ -1612,6 +1685,8 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
         ["Document Similarity", f"{stats.get('similarity_metrics', {}).get('overall_similarity', 0) * 100:.2f}%"],
     ]
     
+    severity_labels = {0: 'Info', 1: 'Minor', 2: 'Major', 3: 'Critical'}
+    
     # Add change type breakdown
     summary_data.append(["", ""])
     summary_data.append(["Change Type Breakdown", ""])
@@ -1636,35 +1711,118 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
     summary_ws.column_dimensions['B'].width = 20
     
     
-    # SEPARATE STRIKETHROUGH CHANGES FROM REGULAR CHANGES WITH DEDUPLICATION
+    # SEPARATE STRIKETHROUGH CHANGES FROM REGULAR CHANGES
     strikethrough_changes = []
     regular_changes = []
-    seen_strikethrough_paragraphs = set()
+    image_changes = []
     
     for change in changes:
         change_type = change.get('type', '')
         
+        # Separate image changes for special handling
+        if change_type in ['image', 'table_image']:
+            image_changes.append(change)
         # Identify strikethrough changes
-        if any(keyword in change_type.lower() for keyword in ['strikethrough', 'strike']):
-            para_index = change.get('index')
-            para_key = f"para_{para_index}" if para_index else None
-            
-            # Deduplicate by paragraph index
-            if para_key and para_key not in seen_strikethrough_paragraphs:
-                strikethrough_changes.append(change)
-                seen_strikethrough_paragraphs.add(para_key)
-            elif not para_key:  # For changes without paragraph index (table strikethrough)
-                # Create unique key for table strikethrough changes
-                table_key = f"table_{change.get('table_index')}_{change.get('row')}_{change.get('col')}"
-                if table_key not in seen_strikethrough_paragraphs:
-                    strikethrough_changes.append(change)
-                    seen_strikethrough_paragraphs.add(table_key)
+        elif any(keyword in change_type.lower() for keyword in ['strikethrough', 'strike']):
+            strikethrough_changes.append(change)
         else:
             regular_changes.append(change)
     
-    print(f"DEBUG: After deduplication - Strikethrough: {len(strikethrough_changes)}, Regular: {len(regular_changes)}")
+    print(f"DEBUG: Changes breakdown - Regular: {len(regular_changes)}, Strikethrough: {len(strikethrough_changes)}, Images: {len(image_changes)}")
     
-    # Create Strikethrough Changes sheet (ONLY for strikethrough changes)
+    # Create Image Changes sheet
+    if image_changes:
+        image_ws = wb.create_sheet("Image Changes")
+        image_headers = [
+            "Change #", "Type", "Location", "Status", "Image Info", 
+            "Dimensions", "Action", "Details"
+        ]
+        image_ws.append(image_headers)
+        
+        # Style image sheet headers
+        for col in range(1, len(image_headers) + 1):
+            cell = image_ws.cell(row=1, column=col)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="4B0082", end_color="4B0082", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+        # Process image changes
+        image_idx = 2
+        for change in image_changes:
+            # Set location based on change type
+            if change["type"] == "image":
+                location = "Document Level"
+            elif change["type"] == "table_image":
+                location = f"Table {change.get('table', '')}, Cell ({change.get('row','')},{change.get('col','')})"
+            else:
+                location = "Unknown"
+            
+            # Image information
+            image_info = "Deleted Image" if change["status"] == "deleted" else "Added Image"
+            dimensions = f"{change.get('width', '?')}x{change.get('height', '?')}"
+            action = change["status"].title()
+            details = change.get("change_detail", "")
+            
+            image_ws.append([
+                image_idx-1,
+                change["type"].replace("_", " ").title(),
+                location,
+                action,
+                image_info,
+                dimensions,
+                action,
+                details
+            ])
+            
+            # Color code based on status
+            if change["status"] == "deleted":
+                fill_color = "FFCCCB"  # Light red
+            elif change["status"] == "added":
+                fill_color = "90EE90"  # Light green
+            else:
+                fill_color = "FFFFE0"  # Light yellow
+                
+            fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+            
+            for col in range(1, len(image_headers) + 1):
+                cell = image_ws.cell(row=image_idx, column=col)
+                cell.fill = fill
+                cell.border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+            
+            # Try to insert image thumbnail if available
+            try:
+                img_bytes = change.get("old_img") or change.get("new_img")
+                if img_bytes and len(img_bytes) > 100:  # Minimum size check
+                    # Use the improved image insertion function
+                    success = insert_image_into_excel(image_ws, img_bytes, f'H{image_idx}', max_width=100, max_height=100)
+                    
+                    if not success:
+                        image_ws.cell(row=image_idx, column=8, value="Image inserted")
+                                            
+            except Exception as e:
+                print(f"Error inserting image thumbnail: {e}")
+                # Add error message to cell
+                image_ws.cell(row=image_idx, column=8, value=f"Thumbnail error: {str(e)}")
+            
+            image_idx += 1
+        
+        # Set column widths for image sheet
+        image_widths = [8, 15, 25, 12, 20, 15, 12, 40]
+        for i, width in enumerate(image_widths, start=1):
+            image_ws.column_dimensions[get_column_letter(i)].width = width
+
+    # Create Strikethrough Changes sheet
     if strikethrough_changes:
         strike_ws = wb.create_sheet("Strikethrough Changes")
         strike_headers = [
@@ -1688,17 +1846,7 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
             
         # Process strikethrough changes
         strike_idx = 2
-        seen_strike_details = set()
-        
         for change in strikethrough_changes:
-            # Create unique identifier for this change to avoid duplicates
-            change_id = f"{change.get('type')}_{change.get('index')}_{change.get('table_index')}_{change.get('row')}_{change.get('col')}_{change.get('status')}"
-            
-            if change_id in seen_strike_details:
-                continue
-                
-            seen_strike_details.add(change_id)
-            
             # Set location based on change type
             if change.get("type") in ["paragraph_strikethrough", "paragraph_formatting_strikethrough"]:
                 location = f"Paragraph {change.get('index', '')}"
@@ -1720,19 +1868,8 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
                 if strike_text:
                     strike_text += "\n"
                 strike_text += f"Modified: {change.get('strikethrough_text_modified')}"
-            if change.get("strikethrough_original") and not strike_text:
-                strike_text = change.get("strikethrough_original", "")
-            if change.get("strikethrough_modified") and not strike_text:
-                strike_text = change.get("strikethrough_modified", "")
             
-            # If no specific strikethrough text, use boolean indicators
-            if not strike_text.strip():
-                if change.get("strikethrough_original"):
-                    strike_text = "Strikethrough in original document"
-                elif change.get("strikethrough_modified"):
-                    strike_text = "Strikethrough in modified document"
-                    
-            # Context information (truncated for readability)
+            # Context information
             context = ""
             original_text = change.get("original", "")
             modified_text = change.get("modified", "")
@@ -1744,12 +1881,11 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
                     context += "\n"
                 context += f"Modified: {modified_text[:100]}{'...' if len(modified_text) > 100 else ''}"
             
-            # Change details (clean up formatting changes)
+            # Change details
             change_detail = change.get("change_detail", "")
             
-            # Add severity information
+            # Severity information
             severity = change.get('severity', 0)
-            severity_labels = {0: 'Info', 1: 'Minor', 2: 'Major', 3: 'Critical'}
             severity_text = severity_labels.get(severity, 'Unknown')
             
             strike_ws.append([
@@ -1768,7 +1904,6 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
             text_cell.font = Font(strike=True)
             
             # Color code based on severity
-            severity = change.get('severity', 0)
             severity_colors = {
                 0: "E6E6FA",  # Info - Lavender
                 1: "90EE90",  # Minor - Light Green
@@ -1779,13 +1914,16 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
             fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
             
             for col in range(1, len(strike_headers) + 1):
-                strike_ws.cell(row=strike_idx, column=col).fill = fill
-                strike_ws.cell(row=strike_idx, column=col).border = Border(
+                cell = strike_ws.cell(row=strike_idx, column=col)
+                cell.fill = fill
+                cell.border = Border(
                     left=Side(style='thin'),
                     right=Side(style='thin'),
                     top=Side(style='thin'),
                     bottom=Side(style='thin')
                 )
+                if col >= 6:  # Content columns
+                    cell.alignment = Alignment(wrap_text=True, vertical='top')
             
             strike_idx += 1
         
@@ -1836,36 +1974,12 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
             location = f"Table {change.get('table_index', '')}, Cell ({change.get('row','')},{change.get('col','')})"
         elif change["type"] == "table_row":
             location = f"Table {change.get('table_index', '')}, Row {change.get('row','')}"
-        elif change["type"] == "image":
-            location = "Document"
-        elif change["type"] == "table_image":
-            location = f"Table {change.get('table','')}, Cell ({change.get('row','')},{change.get('col','')})"
         elif change["type"] == "panel":
             location = f"Panel {change.get('index', '')}"
         
-        # Handle images
-        if change["type"] in ["image", "table_image"]:
-            if change["status"] == "deleted" and change.get("old_img"):
-                try:
-                    # For images, we'll just note their presence in the text
-                    original_text = f"[Image: {change.get('width','?')}x{change.get('height','?')}]"
-                    modified_text = "[Image Deleted]"
-                except Exception as e:
-                    original_text = "[Image]"
-                    modified_text = "[Image Deleted]"
-            elif change["status"] == "added" and change.get("new_img"):
-                try:
-                    original_text = "[No Image]"
-                    modified_text = f"[Image: {change.get('width','?')}x{change.get('height','?')}]"
-                except Exception as e:
-                    original_text = "[No Image]"
-                    modified_text = "[Image Added]"
-            else:
-                original_text = change.get("original", "")
-                modified_text = change.get("modified", "")
-        else:
-            original_text = change.get("original", "")
-            modified_text = change.get("modified", "")
+        # Handle content
+        original_text = change.get("original", "")
+        modified_text = change.get("modified", "")
         
         # Build change details
         change_details = change.get("change_detail", "")
@@ -1894,7 +2008,6 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
         
         # Get severity and category
         severity = change.get('severity', 0)
-        severity_labels = {0: 'Info', 1: 'Minor', 2: 'Major', 3: 'Critical'}
         severity_text = severity_labels.get(severity, 'Unknown')
         category = change.get('category', 'Unknown').title()
         
@@ -1972,7 +2085,7 @@ def export_to_excel_enhanced_with_dashboard(changes: List[Dict], stats: Dict[str
     wb.save(output)
     output.seek(0)
     
-    print(f"DEBUG: Excel export completed - {len(regular_changes)} regular changes, {len(strikethrough_changes)} strikethrough changes")
+    print(f"DEBUG: Excel export completed - Regular: {len(regular_changes)}, Strikethrough: {len(strikethrough_changes)}, Images: {len(image_changes)}")
     return output
 
 # ================================
@@ -2205,7 +2318,6 @@ def visualize_changes():
 def index():
     """
     Main route for document comparison interface.
-    Handles both GET requests (page display) and POST requests (document processing).
     """
     if request.method == "POST":
         is_download_request = request.form.get('download') == 'true'
@@ -2258,23 +2370,27 @@ def index():
             # Compare documents with enhanced comparison
             changes, stats = compare_docx_enhanced(doc1, doc2, comparison_id)
             
-            # Add clustering if requested
-            if request.form.get('enable_clustering'):
-                changes = cluster_similar_changes(changes)
-
             # For download requests, return the Excel file
             if is_download_request:
-                excel_file = export_to_excel_enhanced(changes, stats)
-                
-                # Generate filename with timestamp
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"document_comparison_{timestamp}.xlsx"
-                return send_file(
-                    excel_file,
-                    as_attachment=True,
-                    download_name=filename,
-                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                try:
+                    excel_file = export_to_excel_enhanced(changes, stats)
+                    
+                    # Generate filename with timestamp
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = f"document_comparison_{timestamp}.xlsx"
+                    return send_file(
+                        excel_file,
+                        as_attachment=True,
+                        download_name=filename,
+                        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                except Exception as export_error:
+                    error_msg = f"Error generating Excel report: {str(export_error)}"
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return jsonify({"error": error_msg}), 400
+                    else:
+                        flash(f"❌ {error_msg}")
+                        return render_template("index.html")
 
             # For AJAX requests, return JSON
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
